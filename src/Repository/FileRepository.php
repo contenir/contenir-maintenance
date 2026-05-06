@@ -4,22 +4,41 @@ declare(strict_types=1);
 
 namespace Contenir\Maintenance\Repository;
 
+use Contenir\Config\Reader\PhpArray as ConfigReader;
+use Contenir\Config\Writer\PhpArray as ConfigWriter;
 use Contenir\Maintenance\MaintenanceRepositoryInterface;
 use Contenir\Maintenance\MaintenanceState;
 use DateTimeImmutable;
-use RuntimeException;
 use Throwable;
 
 /**
  * PHP-array file backing store.
  *
- * The file returns an associative array — opcache-cacheable, fast to read on
- * every request. A missing or unreadable file resolves to inactive state so
- * first-run consumers don't crash before the admin has ever toggled the
- * flag. Save errors throw; the caller (admin UI) is expected to surface them.
+ * The file follows the Laminas/Mezzio config-namespacing convention:
+ *
+ *     return [
+ *         'maintenance' => [
+ *             'state' => [
+ *                 'active'  => true,
+ *                 'message' => 'Down for upgrade',
+ *                 'since'   => '2026-01-02T03:04:05+00:00',
+ *             ],
+ *         ],
+ *     ];
+ *
+ * The repository owns only the `maintenance.state` subkey. All other
+ * top-level keys, and any sibling keys under `maintenance`, are preserved
+ * on save — operators or other tooling can hand-edit the same file safely.
+ *
+ * A missing or unreadable file resolves to inactive state so first-run
+ * consumers don't crash before the admin has ever toggled the flag.
  */
 final class FileRepository implements MaintenanceRepositoryInterface
 {
+    private const NAMESPACE_KEY = 'maintenance';
+    private const STATE_KEY     = 'state';
+    private const WRITE_LABEL   = 'maintenance state';
+
     public function __construct(
         private readonly string $filePath,
     ) {
@@ -27,24 +46,16 @@ final class FileRepository implements MaintenanceRepositoryInterface
 
     public function get(): MaintenanceState
     {
-        if (! is_file($this->filePath) || ! is_readable($this->filePath)) {
+        $config    = ConfigReader::fromFile($this->filePath);
+        $stateData = $config[self::NAMESPACE_KEY][self::STATE_KEY] ?? null;
+
+        if (! is_array($stateData)) {
             return MaintenanceState::inactive();
         }
 
-        try {
-            /** @psalm-suppress UnresolvableInclude */
-            $data = include $this->filePath;
-        } catch (Throwable) {
-            return MaintenanceState::inactive();
-        }
-
-        if (! is_array($data)) {
-            return MaintenanceState::inactive();
-        }
-
-        $active  = (bool) ($data['active'] ?? false);
-        $message = (string) ($data['message'] ?? '');
-        $since   = self::parseSince($data['since'] ?? null);
+        $active  = (bool) ($stateData['active'] ?? false);
+        $message = (string) ($stateData['message'] ?? '');
+        $since   = self::parseSince($stateData['since'] ?? null);
 
         if (! $active) {
             return MaintenanceState::inactive();
@@ -61,29 +72,13 @@ final class FileRepository implements MaintenanceRepositoryInterface
             'since'   => $state->since?->format(\DateTimeInterface::ATOM),
         ];
 
-        $contents = "<?php\n\nreturn " . self::exportArray($payload) . ";\n";
-
-        $dir = \dirname($this->filePath);
-        if (! is_dir($dir) && ! @mkdir($dir, 0o755, true) && ! is_dir($dir)) {
-            throw new RuntimeException(sprintf('Cannot create maintenance directory "%s".', $dir));
+        $config = ConfigReader::fromFile($this->filePath);
+        if (! isset($config[self::NAMESPACE_KEY]) || ! is_array($config[self::NAMESPACE_KEY])) {
+            $config[self::NAMESPACE_KEY] = [];
         }
+        $config[self::NAMESPACE_KEY][self::STATE_KEY] = $payload;
 
-        $tmp = $this->filePath . '.tmp';
-        if (@file_put_contents($tmp, $contents, LOCK_EX) === false) {
-            throw new RuntimeException(sprintf('Cannot write maintenance state to "%s".', $tmp));
-        }
-
-        // Atomic swap so a partial write is never visible to readers.
-        if (! @rename($tmp, $this->filePath)) {
-            @unlink($tmp);
-            throw new RuntimeException(sprintf('Cannot install maintenance state at "%s".', $this->filePath));
-        }
-
-        // Drop any cached opcode for the old contents — otherwise readers in
-        // long-running PHP-FPM workers would see stale state.
-        if (\function_exists('opcache_invalidate')) {
-            @opcache_invalidate($this->filePath, true);
-        }
+        ConfigWriter::toFile($this->filePath, $config, self::WRITE_LABEL);
     }
 
     private static function parseSince(mixed $raw): ?DateTimeImmutable
@@ -96,18 +91,5 @@ final class FileRepository implements MaintenanceRepositoryInterface
         } catch (Throwable) {
             return null;
         }
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     */
-    private static function exportArray(array $data): string
-    {
-        $lines = ['['];
-        foreach ($data as $key => $value) {
-            $lines[] = sprintf('    %s => %s,', var_export($key, true), var_export($value, true));
-        }
-        $lines[] = ']';
-        return implode("\n", $lines);
     }
 }

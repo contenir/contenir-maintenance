@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Contenir\Maintenance\Tests\Unit\Repository;
 
+use Contenir\Config\Exception\WriteException;
 use Contenir\Maintenance\MaintenanceState;
 use Contenir\Maintenance\Repository\FileRepository;
 use DateTimeImmutable;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
-use RuntimeException;
 
 #[Group('unit')]
 #[Group('maintenance')]
@@ -27,20 +27,35 @@ final class FileRepositoryTest extends TestCase
     protected function tearDown(): void
     {
         if (is_dir($this->tmpDir)) {
-            $items = glob($this->tmpDir . '/*') ?: [];
-            foreach ($items as $item) {
-                if (is_file($item)) {
-                    unlink($item);
-                }
-            }
-            @rmdir($this->tmpDir);
+            $this->purge($this->tmpDir);
         }
         parent::tearDown();
+    }
+
+    private function purge(string $dir): void
+    {
+        foreach (glob($dir . '/*') ?: [] as $item) {
+            if (is_dir($item)) {
+                $this->purge($item);
+                @rmdir($item);
+            } else {
+                @unlink($item);
+            }
+        }
+        @rmdir($dir);
     }
 
     private function path(string $name = 'maintenance.local.php'): string
     {
         return $this->tmpDir . '/' . $name;
+    }
+
+    private function writeConfig(array $config): void
+    {
+        file_put_contents(
+            $this->path(),
+            "<?php\n\nreturn " . var_export($config, true) . ";\n",
+        );
     }
 
     public function testGetReturnsInactiveWhenFileMissing(): void
@@ -62,12 +77,31 @@ final class FileRepositoryTest extends TestCase
         self::assertFalse($state->active);
     }
 
+    public function testGetReturnsInactiveWhenNamespaceKeyMissing(): void
+    {
+        $this->writeConfig(['somethingelse' => ['stuff' => 'here']]);
+
+        $state = (new FileRepository($this->path()))->get();
+
+        self::assertFalse($state->active);
+    }
+
+    public function testGetReturnsInactiveWhenStateKeyMissing(): void
+    {
+        $this->writeConfig(['maintenance' => ['file' => '/tmp/x']]);
+
+        $state = (new FileRepository($this->path()))->get();
+
+        self::assertFalse($state->active);
+    }
+
     public function testGetReturnsInactiveWhenActiveFlagIsFalseEvenIfMessagePresent(): void
     {
-        file_put_contents(
-            $this->path(),
-            "<?php\n\nreturn ['active' => false, 'message' => 'lingering message'];\n",
-        );
+        $this->writeConfig([
+            'maintenance' => [
+                'state' => ['active' => false, 'message' => 'lingering message'],
+            ],
+        ]);
 
         $state = (new FileRepository($this->path()))->get();
 
@@ -77,14 +111,15 @@ final class FileRepositoryTest extends TestCase
 
     public function testGetReturnsActiveStateWithMessageAndSince(): void
     {
-        file_put_contents(
-            $this->path(),
-            "<?php\n\nreturn [\n"
-                . "    'active' => true,\n"
-                . "    'message' => 'Down for upgrade',\n"
-                . "    'since' => '2026-01-02T03:04:05+00:00',\n"
-                . "];\n",
-        );
+        $this->writeConfig([
+            'maintenance' => [
+                'state' => [
+                    'active'  => true,
+                    'message' => 'Down for upgrade',
+                    'since'   => '2026-01-02T03:04:05+00:00',
+                ],
+            ],
+        ]);
 
         $state = (new FileRepository($this->path()))->get();
 
@@ -95,10 +130,11 @@ final class FileRepositoryTest extends TestCase
 
     public function testGetTreatsUnparseableSinceAsNull(): void
     {
-        file_put_contents(
-            $this->path(),
-            "<?php\n\nreturn ['active' => true, 'message' => 'down', 'since' => 'not-a-date'];\n",
-        );
+        $this->writeConfig([
+            'maintenance' => [
+                'state' => ['active' => true, 'message' => 'down', 'since' => 'not-a-date'],
+            ],
+        ]);
 
         $state = (new FileRepository($this->path()))->get();
 
@@ -132,6 +168,66 @@ final class FileRepositoryTest extends TestCase
         self::assertNull($loaded->since);
     }
 
+    public function testSaveProducesNamespacedFileFormat(): void
+    {
+        $repo = new FileRepository($this->path());
+        $when = new DateTimeImmutable('2026-04-01T12:00:00+00:00');
+        $repo->save(MaintenanceState::active('Hi', $when));
+
+        $loaded = include $this->path();
+
+        self::assertSame([
+            'maintenance' => [
+                'state' => [
+                    'active'  => true,
+                    'message' => 'Hi',
+                    'since'   => '2026-04-01T12:00:00+00:00',
+                ],
+            ],
+        ], $loaded);
+    }
+
+    public function testSavePreservesUnmanagedTopLevelKeys(): void
+    {
+        // An operator (or another package) wrote sibling top-level keys to
+        // the same file. Saving maintenance state must leave them untouched.
+        $this->writeConfig([
+            'pagecache' => ['options' => ['cache' => false]],
+            'errors'    => ['pages' => [404 => ['title' => 'Lost']]],
+        ]);
+
+        $repo = new FileRepository($this->path());
+        $repo->save(MaintenanceState::active('Down'));
+
+        $reloaded = include $this->path();
+
+        self::assertSame(['options' => ['cache' => false]], $reloaded['pagecache']);
+        self::assertSame(404, array_key_first($reloaded['errors']['pages']));
+        self::assertSame('Down', $reloaded['maintenance']['state']['message']);
+    }
+
+    public function testSavePreservesSiblingKeysWithinMaintenanceNamespace(): void
+    {
+        // The .global.php that wires the package may declare other keys
+        // under 'maintenance' (e.g. file). Save must touch only the
+        // 'state' subkey.
+        $this->writeConfig([
+            'maintenance' => [
+                'file'        => '/some/path.php',
+                'retry_after' => 600,
+            ],
+        ]);
+
+        $repo = new FileRepository($this->path());
+        $repo->save(MaintenanceState::active('Down'));
+
+        $reloaded = include $this->path();
+
+        self::assertSame('/some/path.php', $reloaded['maintenance']['file']);
+        self::assertSame(600, $reloaded['maintenance']['retry_after']);
+        self::assertSame('Down', $reloaded['maintenance']['state']['message']);
+    }
+
     public function testSaveCreatesParentDirectoryIfMissing(): void
     {
         $nested = $this->tmpDir . '/nested/inner/maintenance.local.php';
@@ -140,9 +236,6 @@ final class FileRepositoryTest extends TestCase
         $repo->save(MaintenanceState::active('hi'));
 
         self::assertFileExists($nested);
-        unlink($nested);
-        rmdir(\dirname($nested));
-        rmdir(\dirname(\dirname($nested)));
     }
 
     public function testSaveIsAtomicViaTempFileRename(): void
@@ -166,7 +259,7 @@ final class FileRepositoryTest extends TestCase
         $repo = new FileRepository($readOnly . '/maintenance.local.php');
 
         try {
-            $this->expectException(RuntimeException::class);
+            $this->expectException(WriteException::class);
             $repo->save(MaintenanceState::active('x'));
         } finally {
             chmod($readOnly, 0o755);
