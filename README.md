@@ -72,7 +72,3 @@ use Contenir\Maintenance\MaintenanceState;
 
 $repo = new InMemoryRepository(MaintenanceState::active('Down'));
 ```
-
-## License
-
-MIT
