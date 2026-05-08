@@ -3,7 +3,6 @@
     "description": "Framework-agnostic maintenance-mode toggle for Contenir CMS — admin writes, Site reads.",
     "type": "library",
     "license": "MIT",
-    "version": "0.1.0",
     "repositories": [
         {
             "type": "path",
