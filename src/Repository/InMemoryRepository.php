@@ -6,6 +6,7 @@ namespace Contenir\Maintenance\Repository;
 
 use Contenir\Maintenance\MaintenanceRepositoryInterface;
 use Contenir\Maintenance\MaintenanceState;
+use Override;
 
 /**
  * Test-friendly repository that holds state in memory. Shipped in src/ so
@@ -21,11 +22,13 @@ final class InMemoryRepository implements MaintenanceRepositoryInterface
         $this->state = $initial ?? MaintenanceState::inactive();
     }
 
+    #[Override]
     public function get(): MaintenanceState
     {
         return $this->state;
     }
 
+    #[Override]
     public function save(MaintenanceState $state): void
     {
         $this->state = $state;
