@@ -20,8 +20,7 @@ final class MaintenanceState
         public readonly bool $active,
         public readonly string $message,
         public readonly ?DateTimeImmutable $since,
-    ) {
-    }
+    ) {}
 
     public static function active(string $message, ?DateTimeImmutable $since = null): self
     {

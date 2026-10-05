@@ -7,34 +7,35 @@ namespace Contenir\Maintenance\Tests\Unit\Repository;
 use Contenir\Maintenance\MaintenanceState;
 use Contenir\Maintenance\Repository\InMemoryRepository;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 #[Group('unit')]
-#[Group('maintenance')]
+#[Group('repository')]
 final class InMemoryRepositoryTest extends TestCase
 {
-    public function testDefaultsToInactiveWhenNoInitialStateProvided(): void
+    #[Test]
+    public function defaultsToInactiveWhenNoInitialStateIsGiven(): void
     {
-        $repo = new InMemoryRepository();
-
-        self::assertFalse($repo->get()->active);
+        static::assertEquals(MaintenanceState::inactive(), (new InMemoryRepository())->get());
     }
 
-    public function testReturnsInitialState(): void
+    #[Test]
+    public function returnsTheInitialState(): void
     {
         $initial = MaintenanceState::active('initial');
-        $repo    = new InMemoryRepository($initial);
 
-        self::assertSame($initial, $repo->get());
+        static::assertSame($initial, (new InMemoryRepository($initial))->get());
     }
 
-    public function testSaveReplacesState(): void
+    #[Test]
+    public function savedStateReplacesThePreviousOne(): void
     {
-        $repo = new InMemoryRepository();
-        $next = MaintenanceState::active('now down');
+        $repository = new InMemoryRepository(MaintenanceState::active('before'));
+        $next       = MaintenanceState::active('now down');
 
-        $repo->save($next);
+        $repository->save($next);
 
-        self::assertSame($next, $repo->get());
+        static::assertSame($next, $repository->get());
     }
 }

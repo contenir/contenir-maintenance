@@ -13,6 +13,8 @@ use RuntimeException;
  * state rather than throwing — first-run and permission edge cases are part of
  * normal operation. Errors writing the state, by contrast, must throw so the
  * admin UI can surface them.
+ *
+ * @api
  */
 interface MaintenanceRepositoryInterface
 {
