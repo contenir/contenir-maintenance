@@ -17,7 +17,7 @@ as [`contenir/maintenance-laminas-mvc`](https://github.com/contenir/maintenance-
 ## Requirements
 
 - PHP 8.3, 8.4 or 8.5
-- [`contenir/config`](https://github.com/contenir/config) `^0.2 || ^2.0`, only if you use `Repository\FileRepository`
+- [`contenir/config`](https://github.com/contenir/config) `^0.2 || ^2.0`, installed automatically; `Repository\FileRepository` reads and writes through it
 
 The 0.x releases, which support PHP 8.1, remain available from the `0.x`
 branch and `v0.*` tags; see [UPGRADE-2.0.md](UPGRADE-2.0.md).
@@ -26,13 +26,6 @@ branch and `v0.*` tags; see [UPGRADE-2.0.md](UPGRADE-2.0.md).
 
 ```bash
 composer require contenir/maintenance
-```
-
-The package has no runtime dependencies. The admin side, which writes state
-with `FileRepository`, also needs the config writer:
-
-```bash
-composer require contenir/config
 ```
 
 ## Usage
