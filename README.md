@@ -1,7 +1,9 @@
-# contenir/maintenance
+# contenir/contenir-maintenance
 
-[![Continuous Integration](https://github.com/contenir/maintenance/actions/workflows/continuous-integration.yml/badge.svg)](https://github.com/contenir/maintenance/actions/workflows/continuous-integration.yml)
-[![codecov](https://codecov.io/gh/contenir/maintenance/graph/badge.svg)](https://codecov.io/gh/contenir/maintenance)
+Formerly `contenir/maintenance`; the old package is abandoned in favour of this one.
+
+[![Continuous Integration](https://github.com/contenir/contenir-maintenance/actions/workflows/continuous-integration.yml/badge.svg)](https://github.com/contenir/contenir-maintenance/actions/workflows/continuous-integration.yml)
+[![codecov](https://codecov.io/gh/contenir/contenir-maintenance/graph/badge.svg)](https://codecov.io/gh/contenir/contenir-maintenance)
 
 Framework-agnostic maintenance-mode toggle for [Contenir CMS](https://github.com/contenir).
 
@@ -12,12 +14,12 @@ returns 503 with the message until the flag is cleared.
 This package provides the *domain*: a small immutable state value plus a
 repository interface, with file-based and in-memory implementations.
 Framework-specific middleware and listeners come from sibling packages such
-as [`contenir/maintenance-laminas-mvc`](https://github.com/contenir/maintenance-laminas-mvc).
+as [`contenir/contenir-maintenance-laminas-mvc`](https://github.com/contenir/contenir-maintenance-laminas-mvc).
 
 ## Requirements
 
 - PHP 8.3, 8.4 or 8.5
-- [`contenir/config`](https://github.com/contenir/config) `^0.2 || ^2.0`, installed automatically; `Repository\FileRepository` reads and writes through it
+- [`contenir/contenir-config`](https://github.com/contenir/contenir-config) `^2.1`, installed automatically; `Repository\FileRepository` reads and writes through it
 
 The 0.x releases, which support PHP 8.1, remain available from the `0.x`
 branch and `v0.*` tags; see [UPGRADE-2.0.md](UPGRADE-2.0.md).
@@ -25,7 +27,7 @@ branch and `v0.*` tags; see [UPGRADE-2.0.md](UPGRADE-2.0.md).
 ## Install
 
 ```bash
-composer require contenir/maintenance
+composer require contenir/contenir-maintenance
 ```
 
 ## Usage
@@ -84,7 +86,7 @@ if ($state->active) {
 ```
 
 Writes are atomic and invalidate the file's opcache entry (via
-`contenir/config`). A failed write throws
+`contenir/contenir-config`). A failed write throws
 `Contenir\Config\Exception\WriteException`, a `RuntimeException`, with a
 message such as `Cannot write maintenance state to "...".`
 
